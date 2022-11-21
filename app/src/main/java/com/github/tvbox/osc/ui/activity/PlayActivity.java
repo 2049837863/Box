@@ -141,7 +141,7 @@ public class PlayActivity extends BaseActivity {
     private void initView() {
 
         // takagen99 : Hide only when video playing
-        vidHideSysBar();
+        hideSystemUI(false);
 
         mHandler = new Handler(new Handler.Callback() {
             @Override
@@ -854,7 +854,6 @@ public class PlayActivity extends BaseActivity {
         }
         if (!hasNext) {
             Toast.makeText(this, "已经是最后一集了", Toast.LENGTH_SHORT).show();
-            this.onBackPressed();
             return;
         }
         if (mVodInfo.reverseSort) {

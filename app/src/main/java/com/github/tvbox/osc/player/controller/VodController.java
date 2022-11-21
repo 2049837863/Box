@@ -1,6 +1,6 @@
 package com.github.tvbox.osc.player.controller;
 
-import static xyz.doikki.videoplayer.util.PlayerUtils.stringForTime;
+import static xyz.doikki.videoplayer.util.PlayerUtils.stringForTimeVod;
 
 import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
@@ -20,6 +20,7 @@ import android.view.animation.DecelerateInterpolator;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
+import android.widget.ProgressBar;
 import android.widget.SeekBar;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -72,10 +73,16 @@ public class VodController extends BaseController {
                 switch (msg.what) {
                     case 1000: { // seek 刷新
                         mProgressRoot.setVisibility(VISIBLE);
+                        if (isPaused) {
+                            mProgressTop.setVisibility(GONE);
+                        }
                         break;
                     }
                     case 1001: { // seek 关闭
                         mProgressRoot.setVisibility(GONE);
+                        if (isPaused) {
+                            mProgressTop.setVisibility(VISIBLE);
+                        }
                         break;
                     }
                     case 1002: { // 显示底部菜单
@@ -123,6 +130,10 @@ public class VodController extends BaseController {
                                 .setInterpolator(new DecelerateInterpolator())
                                 .setListener(null);
                         mBottomRoot.requestFocus();
+                        if (isKeyUp) {
+                            mPlayerTimeStartBtn.requestFocus();
+                            isKeyUp = false;
+                        }
                         break;
                     }
                     case 1003: { // 隐藏底部菜单
@@ -219,6 +230,8 @@ public class VodController extends BaseController {
     LinearLayout mProgressRoot;
     ImageView mProgressIcon;
     TextView mProgressText;
+    ProgressBar mDialogVideoProgressBar;
+    ProgressBar mDialogVideoPauseBar;
 
     // bottom container
     LinearLayout mBottomRoot;
@@ -286,6 +299,8 @@ public class VodController extends BaseController {
         mProgressRoot = findViewById(R.id.tv_progress_container);
         mProgressIcon = findViewById(R.id.tv_progress_icon);
         mProgressText = findViewById(R.id.tv_progress_text);
+        mDialogVideoProgressBar = findViewWithTag("progressbar_video");
+        mDialogVideoPauseBar = findViewWithTag("pausebar_video");
 
         // bottom container
         mBottomRoot = findViewById(R.id.bottom_container);
@@ -353,7 +368,7 @@ public class VodController extends BaseController {
                 long duration = mControlWrapper.getDuration();
                 long newPosition = (duration * progress) / seekBar.getMax();
                 if (mCurrentTime != null)
-                    mCurrentTime.setText(stringForTime((int) newPosition));
+                    mCurrentTime.setText(stringForTimeVod((int) newPosition));
             }
 
             @Override
@@ -468,11 +483,17 @@ public class VodController extends BaseController {
                 mHandler.postDelayed(mHideBottomRunnable, 10000);
                 try {
                     float speed = (float) mPlayerConfig.getDouble("sp");
-                    speed += 0.25f;
+                    // increase speed by 0.25 OR by 1.00 if > 3
+                    if (speed >= 3) {
+                        speed += 1.0f;
+                    } else {
+                        speed += 0.25f;
+                    }
+                    // set back speed to 0.50 after > 5
                     if (speed == 1) {
 //                        mPlayerFFwd.setCompoundDrawablesWithIntrinsicBounds(dFFwd, null, null, null);
                         mplayerFFImg.setImageDrawable(dFFwd);
-                    } else if (speed > 3) {
+                    } else if (speed > 5) {
                         speed = 0.5f;
                     }
                     mPlayerConfig.put("sp", speed);
@@ -872,8 +893,8 @@ public class VodController extends BaseController {
         SimpleDateFormat timeEnd = new SimpleDateFormat("hh:mm aa", Locale.ENGLISH);
         mTimeEnd.setText("Ends at " + timeEnd.format(afterAdd));
 
-        mCurrentTime.setText(PlayerUtils.stringForTime(position));
-        mTotalTime.setText(PlayerUtils.stringForTime(duration));
+        mCurrentTime.setText(PlayerUtils.stringForTimeVod(position));
+        mTotalTime.setText(PlayerUtils.stringForTimeVod(duration));
         if (duration > 0) {
             mSeekBar.setEnabled(true);
             int pos = (int) (position * 1.0 / duration * mSeekBar.getMax());
@@ -931,10 +952,32 @@ public class VodController extends BaseController {
             mProgressIcon.setImageResource(R.drawable.play_rewind);
         }
         mProgressText.setText(PlayerUtils.stringForTime(seekTo) + " / " + PlayerUtils.stringForTime(duration));
+
+        // takagen99: Update Minibar
+        int percent = (int) (((double) seekTo / (double) duration) * 100);
+        mDialogVideoPauseBar.setProgress(percent);
+        mDialogVideoProgressBar.setProgress(percent);
+
         mHandler.sendEmptyMessage(1000);
         mHandler.removeMessages(1001);
         mHandler.sendEmptyMessageDelayed(1001, 1000);
     }
+
+    // takagen99: (Optional) Hide Bottom Control if trigger Brightness / Volume Slider
+//    @Override
+//    protected void slideToChangeBrightness(float deltaY) {
+//        if (isBottomVisible()) {
+//            hideBottom();
+//        }
+//        super.slideToChangeBrightness(deltaY);
+//    }
+//    @Override
+//    protected void slideToChangeVolume(float deltaY) {
+//        if (isBottomVisible()) {
+//            hideBottom();
+//        }
+//        super.slideToChangeVolume(deltaY);
+//    }
 
     @Override
     protected void onPlayStateChanged(int playState) {
@@ -1006,6 +1049,7 @@ public class VodController extends BaseController {
 
     // takagen99 : Check Pause
     private boolean isPaused = false;
+    private boolean isKeyUp = false;
 
     @Override
     public boolean onKeyEvent(KeyEvent event) {
@@ -1035,8 +1079,14 @@ public class VodController extends BaseController {
                     }
                     return true;
                 }
-//            } else if (keyCode == KeyEvent.KEYCODE_DPAD_UP) {   // takagen99 : Up to show
-            } else if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN || keyCode == KeyEvent.KEYCODE_DPAD_UP) {
+                // takagen99 : Key Up to focus Start Time Skip
+            } else if (keyCode == KeyEvent.KEYCODE_DPAD_UP) {
+                if (!isBottomVisible()) {
+                    showBottom();
+                    isKeyUp = true;
+                    return true;
+                }
+            } else if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
                 if (!isBottomVisible()) {
                     showBottom();
                     return true;
